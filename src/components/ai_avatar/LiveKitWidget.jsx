@@ -1,27 +1,61 @@
 import { useState, useCallback, useEffect } from "react";
-import { LiveKitRoom, RoomAudioRenderer } from "@livekit/components-react";
+import { 
+  LiveKitRoom, 
+  RoomAudioRenderer, 
+  useRoomContext 
+} from "@livekit/components-react";
 import "@livekit/components-styles";
 import AvatarVoiceAgent from "./AvatarVoiceAgent";
 import "./LiveKitWidget.css";
 
+// --- NEW COMPONENT: This listens for the Python Agent's "open_url" command ---
+const NavigationHandler = () => {
+  const room = useRoomContext();
+
+  useEffect(() => {
+    if (!room) return;
+
+    // This function runs every time the Python agent sends a data message
+    const handleData = (payload) => {
+      try {
+        const decoder = new TextDecoder();
+        const message = JSON.parse(decoder.decode(payload));
+
+        if (message.type === "OPEN_URL") {
+          console.log("Agent is navigating to:", message.url);
+          // This moves the user to the new page
+          window.location.href = message.url; 
+        }
+      } catch (err) {
+        console.error("Error decoding agent message:", err);
+      }
+    };
+
+    room.on("dataReceived", handleData);
+    return () => room.off("dataReceived", handleData);
+  }, [room]);
+
+  return null; // This component stays invisible
+};
+
+// --- MAIN WIDGET COMPONENT ---
 const LiveKitWidget = ({ setShowSupport }) => {
   const [token, setToken] = useState(null);
-  const [lkUrl, setLkUrl] = useState(null); // Added state for the URL
+  const [lkUrl, setLkUrl] = useState(null);
   const [isConnecting, setIsConnecting] = useState(true);
 
   const getToken = useCallback(async () => {
     try {
-      console.log("Fetching token from backend...");
+      console.log("Fetching token and URL from backend...");
       const response = await fetch(
         `/api/getToken?name=${encodeURIComponent("admin")}`
       );
       
-      // FIX 1: Parse as JSON, not Text
       const data = await response.json();
       
       if (data.token && data.url) {
         setToken(data.token);
-        setLkUrl(data.url); // FIX 2: Use the URL sent by your Python script
+        setLkUrl(data.url); 
         setIsConnecting(false);
       } else {
         console.error("Invalid response format from API:", data);
@@ -43,7 +77,7 @@ const LiveKitWidget = ({ setShowSupport }) => {
         {isConnecting ? (
           <div className="connecting-status">
             <h2>Calling the Concierge...</h2>
-            <div className="loading-spinner"></div> {/* Add a spinner in your CSS */}
+            <div className="loading-spinner"></div>
             <button
               type="button"
               className="cancel-button"
@@ -54,7 +88,7 @@ const LiveKitWidget = ({ setShowSupport }) => {
           </div>
         ) : token && lkUrl ? (
           <LiveKitRoom
-            serverUrl={lkUrl} // Using the URL from state
+            serverUrl={lkUrl}
             token={token}
             connect={true}
             video={false}
@@ -65,9 +99,12 @@ const LiveKitWidget = ({ setShowSupport }) => {
             }}
           >
             <RoomAudioRenderer />
+            
+            {/* The NavigationHandler is now part of the room */}
+            <NavigationHandler />
+            
             <AvatarVoiceAgent />
             
-            {/* Standard Disconnect UI */}
             <div className="agent-active-ui">
               <p>Receptionist is Online</p>
               <button 
